@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>AI vs Human Text Detector</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background-color: #0f172a;
+      color: #e5e7eb;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .container {
+      max-width: 900px;
+      width: 100%;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #020617;
+      border-radius: 16px;
+      padding: 1.75rem;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+      border: 1px solid #1e293b;
+    }
+
+    h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.7rem;
+    }
+
+    .subtitle {
+      margin: 0 0 1.5rem;
+      color: #9ca3af;
+      font-size: 0.95rem;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      margin-bottom: 0.4rem;
+      color: #cbd5f5;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 180px;
+      padding: 0.75rem 0.9rem;
+      border-radius: 10px;
+      border: 1px solid #1f2937;
+      background: #020617;
+      color: #e5e7eb;
+      resize: vertical;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      box-sizing: border-box;
+    }
+
+    textarea:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #3b82f6;
+    }
+
+    .controls {
+      margin-top: 0.9rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      border-radius: 999px;
+      padding: 0.55rem 1.4rem;
+      font-size: 0.95rem;
+      font-weight: 500;
+      cursor: pointer;
+      background: linear-gradient(135deg, #3b82f6, #22c55e);
+      color: white;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    button:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+
+    .status {
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+
+    .result-card {
+      margin-top: 1.5rem;
+      padding: 1rem 1.2rem;
+      border-radius: 12px;
+      border: 1px solid #1f2937;
+      background: #020617;
+    }
+
+    .result-title {
+      font-size: 0.9rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #6b7280;
+      margin-bottom: 0.5rem;
+    }
+
+    .result-label {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+
+    .result-label.ai {
+      color: #fb7185; /* pink-red for AI */
+    }
+
+    .result-label.human {
+      color: #22c55e; /* green for Human */
+    }
+
+    .result-meta {
+      font-size: 0.85rem;
+      color: #9ca3af;
+    }
+
+    .error {
+      margin-top: 0.75rem;
+      font-size: 0.85rem;
+      color: #f97373;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.15rem 0.55rem;
+      border-radius: 999px;
+      font-size: 0.7rem;
+      background: #111827;
+      border: 1px solid #1f2937;
+      color: #9ca3af;
+      gap: 0.25rem;
+    }
+
+    .badge-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: #22c55e;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;">
+        <div>
+          <h1>AI vs Human Text Detector</h1>
+          <p class="subtitle">
+            Paste any English text and the model will predict whether it’s
+            <strong>AI-generated</strong> or <strong>Human-written</strong>, with a confidence score.
+          </p>
+        </div>
+        <div class="badge" id="healthBadge">
+          <span class="badge-dot" id="healthDot"></span>
+          <span id="healthText">Checking server…</span>
+        </div>
+      </div>
+
+      <label for="inputText">Paste or type your text</label>
+      <textarea id="inputText" placeholder="Write or paste a paragraph, then click &quot;Detect Origin&quot;..."></textarea>
+
+      <div class="controls">
+        <button id="detectBtn">
+          <span id="btnText">Detect Origin</span>
+        </button>
+        <span class="status" id="statusText"></span>
+      </div>
+
+      <div id="errorBox" class="error" style="display:none;"></div>
+
+      <div id="resultCard" class="result-card" style="display:none;">
+        <div class="result-title">Prediction</div>
+        <div id="resultLabel" class="result-label">—</div>
+        <div id="resultMeta" class="result-meta">—</div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = ""; // same origin (http://localhost:8000)
+
+    const inputText = document.getElementById("inputText");
+    const detectBtn = document.getElementById("detectBtn");
+    const btnText = document.getElementById("btnText");
+    const statusText = document.getElementById("statusText");
+    const errorBox = document.getElementById("errorBox");
+    const resultCard = document.getElementById("resultCard");
+    const resultLabel = document.getElementById("resultLabel");
+    const resultMeta = document.getElementById("resultMeta");
+    const healthBadge = document.getElementById("healthBadge");
+    const healthDot = document.getElementById("healthDot");
+    const healthText = document.getElementById("healthText");
+
+    async function checkHealth() {
+      try {
+        const res = await fetch(API_BASE + "/health");
+        if (!res.ok) throw new Error("Server not OK");
+        const data = await res.json();
+        healthDot.style.background = "#22c55e";
+        healthText.textContent = "Online: " + (data.model || "model");
+      } catch (e) {
+        healthDot.style.background = "#f97373";
+        healthText.textContent = "Offline";
+      }
+    }
+
+    function setLoading(isLoading) {
+      detectBtn.disabled = isLoading;
+      btnText.textContent = isLoading ? "Analyzing..." : "Detect Origin";
+      statusText.textContent = isLoading ? "Sending text to the model..." : "";
+    }
+
+    function showError(msg) {
+      errorBox.style.display = "block";
+      errorBox.textContent = msg;
+    }
+
+    function clearError() {
+      errorBox.style.display = "none";
+      errorBox.textContent = "";
+    }
+
+    function showResult(prediction, confidence, score) {
+      resultCard.style.display = "block";
+
+      const isAI = prediction.toLowerCase().includes("ai");
+      resultLabel.textContent = prediction;
+      resultLabel.classList.remove("ai", "human");
+      resultLabel.classList.add(isAI ? "ai" : "human");
+
+      const confPercent = (confidence * 100).toFixed(2);
+      resultMeta.textContent =
+        "Confidence: " + confPercent + "%  •  Margin score: " + score.toFixed(4);
+    }
+
+    async function handleDetect() {
+      clearError();
+      resultCard.style.display = "none";
+
+      const text = inputText.value.trim();
+      if (!text) {
+        showError("Please enter some text first.");
+        return;
+      }
+
+      if (text.split(/\s+/).length < 3) {
+        showError("Please provide at least a few words for a meaningful prediction.");
+        return;
+      }
+
+      setLoading(true);
+
+      try {
+        const res = await fetch(API_BASE + "/predict", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          showError(data.error || "Server returned an error.");
+        } else {
+          const prediction = data.prediction || "Unknown";
+          const confidence = typeof data.confidence === "number" ? data.confidence : 0;
+          const score = typeof data.score === "number" ? data.score : 0;
+          showResult(prediction, confidence, score);
+        }
+      } catch (err) {
+        showError("Failed to contact the server. Is api_server.py running?");
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    detectBtn.addEventListener("click", handleDetect);
+    inputText.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+        handleDetect();
+      }
+    });
+
+    // Check backend status on load
+    checkHealth();
+  </script>
+</body>
+</html>
