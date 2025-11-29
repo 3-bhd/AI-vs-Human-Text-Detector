@@ -162,6 +162,41 @@
       border-radius: 50%;
       background: #22c55e;
     }
+
+    /* Feedback section styles */
+    .feedback-section {
+      margin-top: 1.1rem;
+      padding-top: 0.9rem;
+      border-top: 1px solid #1f2937;
+    }
+
+    .feedback-title {
+      font-size: 0.9rem;
+      color: #9ca3af;
+      margin-bottom: 0.5rem;
+    }
+
+    .feedback-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      align-items: center;
+    }
+
+    select {
+      border-radius: 999px;
+      border: 1px solid #1f2937;
+      background: #020617;
+      color: #e5e7eb;
+      padding: 0.4rem 0.8rem;
+      font-size: 0.9rem;
+    }
+
+    select:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #3b82f6;
+    }
   </style>
 </head>
 <body>
@@ -197,6 +232,23 @@
         <div class="result-title">Prediction</div>
         <div id="resultLabel" class="result-label">—</div>
         <div id="resultMeta" class="result-meta">—</div>
+
+        <!-- Feedback section (shown after a prediction) -->
+        <div id="feedbackSection" class="feedback-section" style="display:none;">
+          <div class="feedback-title">Help improve the model</div>
+          <div class="feedback-row">
+            <label for="feedbackLabel" style="margin:0;">True origin (your judgment):</label>
+            <select id="feedbackLabel">
+              <option value="">Select...</option>
+              <option value="Human">Human-written</option>
+              <option value="AI">AI-generated</option>
+            </select>
+            <button id="sendFeedbackBtn" type="button">
+              Send Feedback
+            </button>
+            <span id="feedbackStatus" class="status"></span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -212,9 +264,15 @@
     const resultCard = document.getElementById("resultCard");
     const resultLabel = document.getElementById("resultLabel");
     const resultMeta = document.getElementById("resultMeta");
-    const healthBadge = document.getElementById("healthBadge");
     const healthDot = document.getElementById("healthDot");
     const healthText = document.getElementById("healthText");
+
+    const feedbackSection = document.getElementById("feedbackSection");
+    const feedbackLabel = document.getElementById("feedbackLabel");
+    const sendFeedbackBtn = document.getElementById("sendFeedbackBtn");
+    const feedbackStatus = document.getElementById("feedbackStatus");
+
+    let lastText = ""; // store last predicted text for feedback
 
     async function checkHealth() {
       try {
@@ -256,11 +314,18 @@
       const confPercent = (confidence * 100).toFixed(2);
       resultMeta.textContent =
         "Confidence: " + confPercent + "%  •  Margin score: " + score.toFixed(4);
+
+      // Enable feedback section after a prediction
+      feedbackSection.style.display = "block";
+      feedbackLabel.value = "";
+      feedbackStatus.textContent = "";
     }
 
     async function handleDetect() {
       clearError();
       resultCard.style.display = "none";
+      feedbackSection.style.display = "none";
+      feedbackStatus.textContent = "";
 
       const text = inputText.value.trim();
       if (!text) {
@@ -290,6 +355,7 @@
           const prediction = data.prediction || "Unknown";
           const confidence = typeof data.confidence === "number" ? data.confidence : 0;
           const score = typeof data.score === "number" ? data.score : 0;
+          lastText = text; // store for feedback
           showResult(prediction, confidence, score);
         }
       } catch (err) {
@@ -299,7 +365,53 @@
       }
     }
 
+    async function handleFeedback() {
+      clearError();
+      feedbackStatus.textContent = "";
+
+      if (!lastText) {
+        showError("Please get a prediction first before sending feedback.");
+        return;
+      }
+
+      const trueLabel = feedbackLabel.value;
+      if (!trueLabel) {
+        showError("Please choose whether the text is Human-written or AI-generated.");
+        return;
+      }
+
+      sendFeedbackBtn.disabled = true;
+      feedbackStatus.textContent = "Sending feedback...";
+
+      try {
+        const res = await fetch(API_BASE + "/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            text: lastText,
+            true_label: trueLabel   // "Human" or "AI" – server normalizes it
+          })
+        });
+
+        const data = await res.json().catch(() => ({}));
+
+        if (!res.ok) {
+          showError(data.error || "Server rejected feedback.");
+          feedbackStatus.textContent = "";
+        } else {
+          feedbackStatus.textContent = "Thank you! Your feedback was recorded.";
+        }
+      } catch (err) {
+        showError("Failed to send feedback. Please try again later.");
+        feedbackStatus.textContent = "";
+      } finally {
+        sendFeedbackBtn.disabled = false;
+      }
+    }
+
     detectBtn.addEventListener("click", handleDetect);
+    sendFeedbackBtn.addEventListener("click", handleFeedback);
+
     inputText.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
         handleDetect();
