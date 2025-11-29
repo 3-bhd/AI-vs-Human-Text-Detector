@@ -7,6 +7,9 @@ Endpoints
 GET  /health
     → simple status + model name.
 
+GET  /
+    → serves the HTML client (static/index.html).
+
 POST /predict
     JSON: { "text": "<string>" }
     → { "prediction": "AI-generated"|"Human-written",
@@ -17,22 +20,30 @@ POST /predict
 POST /feedback
     JSON: { "text": "<string>", "true_label": 0|1|"AI"|"Human"|"AI-generated"|"Human-written" }
     → stores feedback in feedback_store.csv (used later for retraining).
+
+GET /download-feedback?key=1234
+    → downloads feedback_store.csv as an attachment
+      (simple admin password: 1234).
 """
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from pathlib import Path
 from datetime import datetime
 import csv
+import os
 
 from inference_svm import predict_text  # uses vectorizer, scaler, SVM, etc.
 
 # ---------- App + paths ----------
 
-from pathlib import Path
+# Explicit static folder so "/" can serve index.html
 app = Flask(__name__, static_folder="static")
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 FEEDBACK_PATH = PROJECT_ROOT / "feedback_store.csv"
+
+# Simple admin password for downloading feedback
+ADMIN_PASSWORD = "1234"
 
 
 # ---------- Helpers ----------
@@ -79,16 +90,16 @@ def _append_feedback(text: str, true_label: int):
 
 
 # ---------- Routes ----------
+
 @app.route("/", methods=["GET"])
 def index():
-    # Serve static/index.html
+    """Serve the main HTML client."""
     return app.send_static_file("index.html")
+
 
 @app.route("/health", methods=["GET"])
 def health():
-    """
-    Lightweight health check endpoint.
-    """
+    """Lightweight health check endpoint."""
     return jsonify(
         {
             "status": "ok",
@@ -106,7 +117,6 @@ def predict():
     Expects JSON:
       { "text": "<user text>" }
     """
-    # 1) Validate JSON
     if not request.is_json:
         return (
             jsonify({"error": "Invalid request: expected JSON body."}),
@@ -119,7 +129,6 @@ def predict():
 
     text = data.get("text", None)
 
-    # 2) Validate text field
     if text is None:
         return jsonify({"error": "Invalid input: 'text' field is required."}), 400
 
@@ -130,18 +139,17 @@ def predict():
     if len(cleaned) == 0:
         return jsonify({"error": "Invalid input: 'text' cannot be empty."}), 400
 
-    # Optional: minimum length check
-    if len(cleaned.split()) < 3:
+    # Length constraint: at least 100 characters
+    if len(cleaned) < 100:
         return (
             jsonify(
                 {
-                    "error": "Input too short: please provide at least a few words."
+                    "error": "Input too short: please provide at least 100 characters."
                 }
             ),
             400,
         )
 
-    # 3) Run prediction via inference_svm
     try:
         pred_raw, label_human, score, confidence = predict_text(cleaned)
     except Exception as e:
@@ -156,7 +164,7 @@ def predict():
             500,
         )
 
-    # 4) Build response
+    # Build response
     resp = {
         "prediction": label_human,      # "AI-generated" or "Human-written"
         "label_raw": int(pred_raw),     # 1 or 0
@@ -204,7 +212,6 @@ def feedback():
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    # Append to CSV
     try:
         _append_feedback(text.strip(), true_label)
     except Exception as e:
@@ -218,10 +225,36 @@ def feedback():
     return jsonify({"status": "ok", "message": "Feedback stored."}), 200
 
 
+@app.route("/download-feedback", methods=["GET"])
+def download_feedback():
+    """
+    Admin endpoint to download the feedback CSV.
+
+    Requires query parameter:
+      ?key=1234
+
+    If the key is wrong, returns 403.
+    If the file doesn't exist, returns 404.
+    Otherwise, returns the CSV as an attachment.
+    """
+    key = request.args.get("key", "")
+    if key != ADMIN_PASSWORD:
+        return jsonify({"error": "Unauthorized: invalid admin key."}), 403
+
+    if not FEEDBACK_PATH.exists():
+        return jsonify({"error": "No feedback file found."}), 404
+
+    return send_file(
+        FEEDBACK_PATH,
+        mimetype="text/csv",
+        as_attachment=True,
+        download_name="feedback_store.csv",
+    )
+
+
 # ---------- Main ----------
 
 if __name__ == "__main__":
-    import os
+    # Use dynamic PORT for Railway (fallback to 8000 for local dev)
     port = int(os.environ.get("PORT", 8000))
     app.run(host="0.0.0.0", port=port)
-

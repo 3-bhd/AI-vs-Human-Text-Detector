@@ -71,6 +71,12 @@
       box-shadow: 0 0 0 1px #3b82f6;
     }
 
+    .hint {
+      margin-top: 0.2rem;
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+
     .controls {
       margin-top: 0.9rem;
       display: flex;
@@ -197,6 +203,56 @@
       border-color: #3b82f6;
       box-shadow: 0 0 0 1px #3b82f6;
     }
+
+    /* Admin section */
+    .admin-section {
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px dashed #1f2937;
+    }
+
+    .admin-panel {
+      margin-top: 0.75rem;
+      display: none;
+    }
+
+    .admin-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.6rem;
+      align-items: center;
+    }
+
+    .admin-row input[type="password"] {
+      border-radius: 999px;
+      border: 1px solid #1f2937;
+      background: #020617;
+      color: #e5e7eb;
+      padding: 0.35rem 0.9rem;
+      font-size: 0.9rem;
+    }
+
+    .admin-row input[type="password"]:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 1px #3b82f6;
+    }
+
+    .admin-label {
+      font-size: 0.9rem;
+      color: #9ca3af;
+    }
+
+    .admin-note {
+      font-size: 0.8rem;
+      color: #6b7280;
+      margin-top: 0.3rem;
+    }
+
+    .btn-secondary {
+      background: #111827;
+      border: 1px solid #1f2937;
+    }
   </style>
 </head>
 <body>
@@ -218,6 +274,7 @@
 
       <label for="inputText">Paste or type your text</label>
       <textarea id="inputText" placeholder="Write or paste a paragraph, then click &quot;Detect Origin&quot;..."></textarea>
+      <div class="hint">Minimum length: 100 characters.</div>
 
       <div class="controls">
         <button id="detectBtn">
@@ -233,7 +290,7 @@
         <div id="resultLabel" class="result-label">—</div>
         <div id="resultMeta" class="result-meta">—</div>
 
-        <!-- Feedback section (shown after a prediction) -->
+        <!-- Feedback section -->
         <div id="feedbackSection" class="feedback-section" style="display:none;">
           <div class="feedback-title">Help improve the model</div>
           <div class="feedback-row">
@@ -249,12 +306,31 @@
             <span id="feedbackStatus" class="status"></span>
           </div>
         </div>
+
+        
       </div>
+      <div class="admin-section">
+          <button id="adminToggleBtn" type="button" class="btn-secondary">
+            Admin tools
+          </button>
+          <div id="adminPanel" class="admin-panel">
+            <div class="admin-row">
+              <span class="admin-label">Admin password:</span>
+              <input type="password" id="adminPassword" placeholder="••••" />
+              <button id="adminUnlockBtn" type="button">Unlock</button>
+              <button id="downloadCsvBtn" type="button" style="display:none;">
+                Download feedback CSV
+              </button>
+            </div>
+            <div class="admin-note">Default password for demo: 1234</div>
+            <span id="adminStatus" class="status"></span>
+          </div>
+        </div>
     </div>
   </div>
 
   <script>
-    const API_BASE = ""; // same origin (http://localhost:8000)
+    const API_BASE = ""; // same origin (http://localhost:8000 or Railway URL)
 
     const inputText = document.getElementById("inputText");
     const detectBtn = document.getElementById("detectBtn");
@@ -272,7 +348,16 @@
     const sendFeedbackBtn = document.getElementById("sendFeedbackBtn");
     const feedbackStatus = document.getElementById("feedbackStatus");
 
-    let lastText = ""; // store last predicted text for feedback
+    const adminToggleBtn = document.getElementById("adminToggleBtn");
+    const adminPanel = document.getElementById("adminPanel");
+    const adminPassword = document.getElementById("adminPassword");
+    const adminUnlockBtn = document.getElementById("adminUnlockBtn");
+    const downloadCsvBtn = document.getElementById("downloadCsvBtn");
+    const adminStatus = document.getElementById("adminStatus");
+
+    let lastText = "";     // last text sent to /predict
+    let adminUnlocked = false;
+    let adminKey = "";     // store the correct password once entered
 
     async function checkHealth() {
       try {
@@ -323,9 +408,8 @@
 
     async function handleDetect() {
       clearError();
-      resultCard.style.display = "none";
-      feedbackSection.style.display = "none";
       feedbackStatus.textContent = "";
+      adminStatus.textContent = "";
 
       const text = inputText.value.trim();
       if (!text) {
@@ -333,12 +417,14 @@
         return;
       }
 
-      if (text.split(/\s+/).length < 3) {
-        showError("Please provide at least a few words for a meaningful prediction.");
+      if (text.length < 100) {
+        showError("Please provide at least 100 characters for a meaningful prediction.");
         return;
       }
 
       setLoading(true);
+      resultCard.style.display = "none";
+      feedbackSection.style.display = "none";
 
       try {
         const res = await fetch(API_BASE + "/predict", {
@@ -355,7 +441,7 @@
           const prediction = data.prediction || "Unknown";
           const confidence = typeof data.confidence === "number" ? data.confidence : 0;
           const score = typeof data.score === "number" ? data.score : 0;
-          lastText = text; // store for feedback
+          lastText = text;
           showResult(prediction, confidence, score);
         }
       } catch (err) {
@@ -409,8 +495,52 @@
       }
     }
 
+    function toggleAdminPanel() {
+      if (adminPanel.style.display === "none" || adminPanel.style.display === "") {
+        adminPanel.style.display = "block";
+      } else {
+        adminPanel.style.display = "none";
+      }
+    }
+
+    function handleUnlockAdmin() {
+      clearError();
+      adminStatus.textContent = "";
+
+      const pwd = adminPassword.value.trim();
+      if (!pwd) {
+        adminStatus.textContent = "Please enter the admin password.";
+        return;
+      }
+
+      if (pwd === "1234") {
+        adminUnlocked = true;
+        adminKey = pwd;
+        adminStatus.textContent = "Admin unlocked. You can now download the feedback CSV.";
+        downloadCsvBtn.style.display = "inline-flex";
+      } else {
+        adminUnlocked = false;
+        adminKey = "";
+        downloadCsvBtn.style.display = "none";
+        adminStatus.textContent = "Wrong password.";
+      }
+    }
+
+    function handleDownloadCsv() {
+      if (!adminUnlocked || !adminKey) {
+        adminStatus.textContent = "Admin is not unlocked.";
+        return;
+      }
+      // Trigger a file download from /download-feedback with the admin key
+      const url = API_BASE + "/download-feedback?key=" + encodeURIComponent(adminKey);
+      window.location.href = url;
+    }
+
     detectBtn.addEventListener("click", handleDetect);
     sendFeedbackBtn.addEventListener("click", handleFeedback);
+    adminToggleBtn.addEventListener("click", toggleAdminPanel);
+    adminUnlockBtn.addEventListener("click", handleUnlockAdmin);
+    downloadCsvBtn.addEventListener("click", handleDownloadCsv);
 
     inputText.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
