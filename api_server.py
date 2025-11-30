@@ -139,12 +139,12 @@ def predict():
     if len(cleaned) == 0:
         return jsonify({"error": "Invalid input: 'text' cannot be empty."}), 400
 
-    # Length constraint: at least 100 characters
-    if len(cleaned) < 100:
+    # Length constraint: at least 250 characters
+    if len(cleaned) < 250:
         return (
             jsonify(
                 {
-                    "error": "Input too short: please provide at least 100 characters."
+                    "error": "Input too short: please provide at least 250 characters."
                 }
             ),
             400,
